@@ -324,7 +324,7 @@ subroutine particles_framework_init(parts, Grid, Time, dt)
   call mpp_get_neighbor_pe(grd%domain, WEST, grd%pe_W)
 
 
-  folded_north_on_pe = ((Grid%Domain%y_flags == FOLD_NORTH_EDGE) .and. (grd%jec == Grid%HI%jeg-Grid%HI%jsg+1))
+  folded_north_on_pe = ((Grid%Domain%y_flags == FOLD_NORTH_EDGE) .and. (grd%jec + grd%js_offset == grd%jeg))
  ! Allocate grid of pointers
   allocate( parts%list(grd%isd:grd%ied, grd%jsd:grd%jed) )
   do j = grd%jsd,grd%jed ; do i = grd%isd,grd%ied
