@@ -38,7 +38,7 @@ use MOM_particles_framework, only: bilin
 !params !Niki: write a subroutine to get these
 use MOM_particles_framework, only: buffer_width, buffer_width_traj
 use MOM_particles_framework, only: verbose, really_debug, debug, restart_input_dir
-use MOM_particles_framework, only: ignore_ij_restart, use_slow_find,generate_test_particles!,print_part
+use MOM_particles_framework, only: ignore_ij_restart, use_slow_find
 use MOM_particles_framework, only: force_all_pes_traj
 use MOM_particles_framework, only: check_for_duplicates_in_parallel
 use MOM_particles_framework, only: split_id, id_from_2_ints, generate_id
@@ -662,7 +662,6 @@ logical :: io_is_in_append_mode
 
 
 this=>trajectory
-print *,'done write_traj...'
 
 !do while (.true.)
 !
