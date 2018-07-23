@@ -38,7 +38,6 @@ logical :: really_debug=.false. !< Turn on debugging
 logical :: parallel_reprod=.true. !< Reproduce across different PE decompositions
 logical :: use_slow_find=.true. !< Use really slow (but robust) find_cell for reading restarts
 logical :: ignore_ij_restart=.false. !< Read i,j location from restart if available (needed to use restarts on different grids)
-logical :: generate_test_particles=.false. !< Create particles in absence of a restart file
 logical :: use_roundoff_fix=.true. !< Use a "fix" for the round-off discrepancy between is_point_in_cell() and pos_within_cell()
 logical :: old_bug_bilin=.true. !< If true, uses the inverted bilinear function (use False to get correct answer)
 character(len=10) :: restart_input_dir = 'INPUT/' !< Directory to look for restart files
@@ -52,7 +51,7 @@ logical :: force_all_pes_traj=.false. !< Force all pes write trajectory files re
 !Public params !Niki: write a subroutine to expose these
 public buffer_width,buffer_width_traj
 public verbose, really_debug, debug, restart_input_dir,old_bug_bilin,use_roundoff_fix
-public ignore_ij_restart, use_slow_find,generate_test_particles
+public ignore_ij_restart, use_slow_find
 public force_all_pes_traj
 
 !Public types
@@ -256,22 +255,27 @@ subroutine particles_framework_init(parts, Grid, Time, dt)
   logical :: input_freq_distribution=.false. ! Flag to show if input distribution is freq or mass dist (=1 if input is a freq dist, =0 to use an input mass dist)
   logical :: read_old_restarts=.false. ! Legacy option that does nothing
   integer(kind=8) :: debug_particle_with_id = -1 ! If positive, monitors a part with this id
+  integer :: generate_days=-1 ! If positive, is the period in days between generation of new particles on a grid. If 0, generate once. Negative do nothing.
+  real :: generate_lons(3) ! Start,end and delta longitude, if generating particles
+  real :: generate_lats(3) ! Start,end and delta longitude, if generating particles
 
   namelist /particles_nml/ verbose, halo,  traj_sample_hrs, traj_write_hrs, save_short_traj,  &
          verbose_hrs,  &
          debug, really_debug, ignore_missing_restart_parts, &
          parallel_reprod, use_slow_find, ignore_ij_restart, use_new_predictive_corrective, halo_debugging, &
-         generate_test_particles, fix_restart_dates, use_roundoff_fix, Runge_not_Verlet, &
+         fix_restart_dates, use_roundoff_fix, Runge_not_Verlet, &
          restart_input_dir, old_bug_bilin,do_unit_tests, force_all_pes_traj, &
          grid_is_latlon,Lx, &
          grid_is_regular, &
+         generate_days, generate_lons, generate_lats, &
          ignore_traj, debug_particle_with_id, read_old_restarts
 
   ! Local variables
   integer :: ierr, iunit, i, j, id_class, is, ie, js, je, np
+  integer :: iyr, imon, iday, ihr, imin, isec
   type(particles_gridded), pointer :: grd
   real :: lon_mod, big_number
-  logical :: lerr
+  logical :: lerr, lgenerate
   integer :: stdlogunit, stderrunit
 
   ! Get the stderr and stdlog unit numbers
@@ -501,11 +505,73 @@ subroutine particles_framework_init(parts, Grid, Time, dt)
    if (unit_tests(parts)) call error_mesg('particles, particles_init', 'Unit tests failed!', FATAL)
   endif
 
+  ! Generate a grid of particles if requested
+  call get_date(Time, iyr, imon, iday, ihr, imin, isec)
+  if (3600*ihr + 60*imin +isec == 0) then ! Make sure we are on a day boundary
+    lgenerate = .false.
+    if (generate_days>0) then
+      if ( mod(365*(iyr-1)+iday-1, generate_days)==0 ) lgenerate = .true.
+    elseif (generate_days==0 .and. 365*(iyr-1)+iday-1==0) then
+      lgenerate = .true.
+    endif
+    if (lgenerate) call generate_grid_of_particles(parts, &
+                          generate_lons(1), generate_lons(2), generate_lons(3), &
+                          generate_lats(1), generate_lats(2), generate_lats(3))
+  endif
+
  !write(stderrunit,*) 'particles: done'
   call mpp_clock_end(parts%clock_ini)
   call mpp_clock_end(parts%clock)
 
 end subroutine particles_framework_init
+
+!> Generate particles on a grid
+subroutine generate_grid_of_particles(parts, lon_start, lon_end, dlon, lat_start, lat_end, dlat)
+! Arguments
+type(particles), pointer :: parts !< Container for all types and memory
+real, intent(in) :: lon_start !< Start longitude of grid of particles
+real, intent(in) :: lon_end !< End longitude of grid of particles
+real, intent(in) :: dlon !< Separation longitude of particles on grid
+real, intent(in) :: lat_start !< Start latitude of grid of particles
+real, intent(in) :: lat_end !< End latitude of grid of particles
+real, intent(in) :: dlat !< Separation latitude of particles on grid
+! Local variables
+type(particles_gridded), pointer :: grd => null()
+type(particle) :: localpart
+integer :: i, j, ie, je
+real :: lat_min, lat_max
+logical :: lres
+
+  grd=>parts%grd
+  lat_min = minval( grd%lat(grd%isc-1:grd%iec,grd%jsc-1:grd%jec) )
+  lat_max = maxval( grd%lat(grd%isc-1:grd%iec,grd%jsc-1:grd%jec) )
+
+  ! Adjust local grid range to match generating grid
+  lat_min = max( int((lat_min - lat_start)/dlat)*dlat + lat_start, lat_start)
+  lat_max = min( int((lat_max - lat_start)/dlat)*dlat + lat_start, lat_end)
+
+  ie = int( (lon_end-lon_start)/dlon + 0.5 )
+  je = int( (lat_end-lat_start)/dlat + 0.5 )
+
+  do j =  0,je
+    localpart%lat = lat_start + dlat*float(j)
+    if (localpart%lat >= lat_min .and. localpart%lat <= lat_max) then
+      do i = 0,ie
+        localpart%lon = lon_start + dlon*float(i)
+        lres=find_cell(grd, localpart%lon, localpart%lat, localpart%ine, localpart%jne)
+        if (lres) then
+          if (grd%msk(localpart%ine,localpart%jne)>0.) then
+            localpart%id = generate_id(grd, localpart%ine, localpart%jne)
+            call add_new_part_to_list(parts%list(localpart%ine,localpart%jne)%first, localpart)
+          endif
+        endif
+      enddo
+    endif
+  enddo
+
+  call parts_chksum(parts, 'after generated particles')
+
+end subroutine generate_grid_of_particles
 
 ! ##############################################################################
 
