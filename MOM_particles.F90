@@ -74,15 +74,11 @@ subroutine particles_init(parts, Grid, Time, dt, u, v)
 
  integer :: io_layout(2)
  integer :: stdlogunit, stderrunit
- integer :: gni, gnj ! Global extent of ocean grid
 
  ! Get the stderr and stdlog unit numbers
  stderrunit=stderr()
  stdlogunit=stdlog()
  write(stdlogunit,*) "particles: "//trim(version)
-
- gni = Grid%ieg - Grid%isg + 1
- gnj = Grid%jeg - Grid%jsg + 1
 
  call particles_framework_init(parts, Grid, Time, dt)
  call mpp_clock_begin(parts%clock_ior)

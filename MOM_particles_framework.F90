@@ -357,8 +357,8 @@ subroutine particles_framework_init(parts, Grid, Time, dt)
 
 
   is=grd%isc; ie=grd%iec; js=grd%jsc; je=grd%jec
-  grd%lon(is:ie,js:je)=Grid%geolonT(is:ie,js:je)
-  grd%lat(is:ie,js:je)=Grid%geolatT(is:ie,js:je)
+  grd%lon(is:ie,js:je)=Grid%geolonBu(is:ie,js:je)
+  grd%lat(is:ie,js:je)=Grid%geolatBu(is:ie,js:je)
   grd%area(is:ie,js:je)=Grid%areaT(is:ie,js:je) !sis2 has *(4.*pi*radius*radius)
   grd%ocean_depth(is:ie,js:je) = Grid%bathyT(is:ie,js:je)
   is=grd%isc; ie=grd%iec; js=grd%jsc; je=grd%jec
